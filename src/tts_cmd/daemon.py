@@ -18,6 +18,7 @@ import json
 import logging
 import signal
 import sys
+import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from .config import Settings, load_settings
@@ -76,9 +77,13 @@ def serve(settings: Settings | None = None) -> int:
     )
 
     def _shutdown(*_args: object) -> None:
+        # ``server.shutdown()`` blocks until ``serve_forever`` returns, but the
+        # signal handler IS running on the main thread that owns
+        # ``serve_forever`` — calling shutdown here would deadlock. Dispatch
+        # it to a helper thread instead.
         log.info("shutting down")
         service.cancel()
-        server.shutdown()
+        threading.Thread(target=server.shutdown, daemon=True).start()
 
     signal.signal(signal.SIGTERM, _shutdown)
     signal.signal(signal.SIGINT, _shutdown)

@@ -15,10 +15,13 @@ Design notes
 
 from __future__ import annotations
 
+import logging
 import queue
 import sys
 import threading
 from typing import Optional
+
+log = logging.getLogger("tts_cmd.service")
 
 from .audio import PcmStreamPlayer, play_wav
 from .config import ACTIVATION_SOUND_PATH, Settings, load_settings
@@ -106,6 +109,7 @@ class TTSService:
             self._worker.start()
 
     def _run(self, text: str) -> None:
+        log.debug("worker: start (%d chars)", len(text))
         chunks: "queue.Queue[object]" = queue.Queue(maxsize=64)
 
         fetcher = threading.Thread(
@@ -113,8 +117,9 @@ class TTSService:
         )
         fetcher.start()
 
-        # The activation cue plays while the API request warms up. ~280 ms of
-        # masking that doubles as user feedback.
+        # Activation cue plays in parallel with the OpenAI request warming
+        # up — the first PCM chunks usually arrive while the cue is still
+        # finishing.
         play_wav(ACTIVATION_SOUND_PATH)
         if self._cancel_event.is_set():
             return
@@ -122,7 +127,7 @@ class TTSService:
         try:
             player = PcmStreamPlayer(sample_rate=self._settings.sample_rate)
         except Exception as exc:  # noqa: BLE001
-            print(f"[tts-cmd] audio init failed: {exc}", file=sys.stderr)
+            log.exception("worker: audio init failed: %s", exc)
             return
 
         with self._lock:
@@ -135,6 +140,7 @@ class TTSService:
                     try:
                         item = chunks.get(timeout=15.0)
                     except queue.Empty:
+                        log.warning("worker: stream stalled (15s no chunk)")
                         break
                     if item is _SENTINEL:
                         break
@@ -142,6 +148,7 @@ class TTSService:
         finally:
             with self._lock:
                 self._current_player = None
+            log.debug("worker: end")
 
     def _fetch(self, text: str, chunks: "queue.Queue[object]") -> None:
         try:

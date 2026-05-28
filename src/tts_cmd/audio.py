@@ -9,9 +9,12 @@
 
 from __future__ import annotations
 
+import logging
 import shutil
 import subprocess
 from pathlib import Path
+
+log = logging.getLogger("tts_cmd.audio")
 
 
 def _have(cmd: str) -> bool:
@@ -19,27 +22,33 @@ def _have(cmd: str) -> bool:
 
 
 def play_wav(path: Path) -> None:
-    """Block until a short WAV finishes playing. Errors are swallowed —
-    the activation cue is a nice-to-have, never a blocker."""
+    """Block until a short WAV finishes playing. Errors are logged but
+    never raised — the activation cue is a nice-to-have, never a blocker."""
     if not path.is_file():
+        log.warning("play_wav: %s missing", path)
         return
     try:
         if _have("paplay"):
-            subprocess.run(
-                ["paplay", str(path)],
-                check=False,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-            )
+            cmd = ["paplay", str(path)]
         elif _have("ffplay"):
-            subprocess.run(
-                ["ffplay", "-nodisp", "-autoexit", "-loglevel", "quiet", str(path)],
-                check=False,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-            )
-    except Exception:
-        pass
+            cmd = ["ffplay", "-nodisp", "-autoexit", "-loglevel", "quiet", str(path)]
+        else:
+            log.warning("no audio player available (need paplay or ffplay)")
+            return
+        result = subprocess.run(
+            cmd,
+            check=False,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
+            timeout=5.0,
+        )
+        if result.returncode != 0:
+            log.warning("%s rc=%d stderr=%r", cmd[0], result.returncode,
+                        result.stderr.decode("utf-8", "replace")[:200])
+    except subprocess.TimeoutExpired:
+        log.warning("play_wav timed out")
+    except Exception as exc:  # noqa: BLE001
+        log.exception("play_wav failed: %s", exc)
 
 
 class PcmStreamPlayer:
