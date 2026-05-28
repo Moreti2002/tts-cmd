@@ -1,0 +1,71 @@
+#!/usr/bin/env bash
+# tts_speak — CLI wrapper.
+#
+# By default this talks to the local HTTP daemon (POST /trigger), which
+# gives sub-200 ms hotkey latency. Falls back to a blocking one-shot run
+# if the daemon is unreachable.
+#
+# Usage:
+#   tts_speak "text to speak"
+#   tts_speak --file /path/to/text.txt
+#   echo "text" | tts_speak -
+#   tts_speak --stop                          # cancel current speech
+#   tts_speak --direct "text"                 # bypass daemon, blocking
+set -euo pipefail
+
+PROJECT_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." &>/dev/null && pwd)"
+VENV_PYTHON="${PROJECT_ROOT}/venv/bin/python"
+DAEMON_URL="${TTS_DAEMON_URL:-http://127.0.0.1:47284}"
+
+read_text_arg() {
+    case "${1:-}" in
+        --file)
+            [[ -f "${2:-}" ]] || { echo "tts_speak: --file requires a path" >&2; exit 2; }
+            cat -- "${2}"
+            ;;
+        -)
+            cat
+            ;;
+        "")
+            echo "tts_speak: no text supplied" >&2
+            exit 2
+            ;;
+        *)
+            printf '%s' "$*"
+            ;;
+    esac
+}
+
+direct_speak() {
+    local text="$1"
+    [[ -x "${VENV_PYTHON}" ]] || { echo "tts_speak: venv missing — run install.sh" >&2; exit 1; }
+    PYTHONPATH="${PROJECT_ROOT}/src" "${VENV_PYTHON}" -m tts_cmd "${text}"
+}
+
+# --stop: cancel only.
+if [[ "${1:-}" == "--stop" ]]; then
+    exec curl -s -X POST --max-time 1 "${DAEMON_URL}/cancel" >/dev/null
+fi
+
+# --direct: skip the daemon (useful for debugging).
+if [[ "${1:-}" == "--direct" ]]; then
+    shift
+    text="$(read_text_arg "$@")"
+    direct_speak "${text}"
+    exit $?
+fi
+
+text="$(read_text_arg "$@")"
+
+# Try daemon first.
+if curl -s -o /dev/null --max-time 0.3 "${DAEMON_URL}/health"; then
+    printf '%s' "${text}" \
+        | curl -s -o /dev/null --max-time 1 \
+            -X POST --data-binary @- \
+            -H "Content-Type: text/plain; charset=utf-8" \
+            "${DAEMON_URL}/trigger"
+    exit 0
+fi
+
+# Fallback: spawn directly (slower, blocks).
+direct_speak "${text}"

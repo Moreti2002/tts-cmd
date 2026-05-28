@@ -1,0 +1,16 @@
+[Unit]
+Description=tts-cmd HTTP daemon (OpenAI gpt-4o-mini-tts)
+After=sound.target network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/darkdogg762/documents/codes/tts-cmd
+Environment=PYTHONPATH=/home/darkdogg762/documents/codes/tts-cmd/src
+Environment=PULSE_SERVER=unix:/mnt/wslg/PulseServer
+Environment=XDG_RUNTIME_DIR=/run/user/1000
+ExecStart=/home/darkdogg762/documents/codes/tts-cmd/venv/bin/python -u -m tts_cmd --serve
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=default.target
