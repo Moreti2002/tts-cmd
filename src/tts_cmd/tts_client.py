@@ -32,6 +32,7 @@ class OpenAITTSClient:
             "voice": self._settings.voice,
             "input": text,
             "response_format": "wav",
+            "speed": self._settings.speed,
         }
         if self._settings.model.startswith("gpt-4o"):
             request_kwargs["instructions"] = self._settings.instructions

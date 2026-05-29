@@ -26,8 +26,9 @@ class Settings:
     voice: str = "coral"
     response_format: str = "pcm"
     sample_rate: int = 24_000
+    speed: float = 1.4
     instructions: str = (
-        "Speak in a clear, natural, and engaging tone. "
+        "Speak in a clear, natural, and engaging tone at a brisk pace. "
         "Mirror the language of the input text."
     )
     daemon_host: str = "127.0.0.1"
@@ -53,6 +54,7 @@ def load_settings() -> Settings:
         openai_api_key=api_key,
         model=os.environ.get("TTS_MODEL", "gpt-4o-mini-tts"),
         voice=os.environ.get("TTS_VOICE", "coral"),
+        speed=float(os.environ.get("TTS_SPEED", "1.4")),
         daemon_host=os.environ.get("TTS_HOST", "127.0.0.1"),
         daemon_port=int(os.environ.get("TTS_PORT", "47284")),
     )

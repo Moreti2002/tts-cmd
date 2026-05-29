@@ -16,9 +16,12 @@ it on demand.
 
 from __future__ import annotations
 
+import io
 import logging
+import struct
 import subprocess
 import threading
+import wave
 from pathlib import Path
 from typing import Optional
 
@@ -27,6 +30,38 @@ log = logging.getLogger("tts_cmd.windows_audio")
 
 class WindowsAudioError(RuntimeError):
     pass
+
+
+def sanitize_wav(raw: bytes) -> bytes:
+    """Rewrite a WAV with correct chunk sizes.
+
+    OpenAI streams WAV with placeholder chunk sizes (0xFFFFFFFF) for both the
+    RIFF and data chunks. ffplay tolerates this, but Windows
+    ``System.Media.SoundPlayer`` rejects it as "not a valid wave file". We
+    extract the PCM payload and the format parameters, then re-emit a WAV with
+    correct sizes via the ``wave`` module.
+    """
+    try:
+        data_idx = raw.find(b"data")
+        fmt_idx = raw.find(b"fmt ")
+        if data_idx == -1 or fmt_idx == -1:
+            return raw
+        # fmt subchunk fields (little-endian), relative to "fmt " marker.
+        channels = struct.unpack_from("<H", raw, fmt_idx + 10)[0]
+        rate = struct.unpack_from("<I", raw, fmt_idx + 12)[0]
+        bits = struct.unpack_from("<H", raw, fmt_idx + 22)[0]
+        pcm = raw[data_idx + 8:]
+
+        buf = io.BytesIO()
+        with wave.open(buf, "wb") as w:
+            w.setnchannels(channels or 1)
+            w.setsampwidth((bits or 16) // 8)
+            w.setframerate(rate or 24_000)
+            w.writeframes(pcm)
+        return buf.getvalue()
+    except Exception as exc:  # noqa: BLE001
+        log.warning("sanitize_wav failed (%s); using raw bytes", exc)
+        return raw
 
 
 def _resolve_windows_temp() -> tuple[str, Path]:
@@ -99,7 +134,7 @@ class WindowsAudioBackend:
 
         Blocks until playback finishes or is cancelled via ``cancel()``.
         """
-        self._speech_wsl.write_bytes(wav_bytes)
+        self._speech_wsl.write_bytes(sanitize_wav(wav_bytes))
 
         # The player writes its own Windows PID, then blocks on PlaySync so we
         # can kill exactly that process to cancel.

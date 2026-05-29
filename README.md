@@ -94,6 +94,7 @@ inherits — `systemd-run --user --setenv` works too).
 | `OPENAI_API_KEY`  | (required)         |                                       |
 | `TTS_MODEL`       | `gpt-4o-mini-tts`  | Any OpenAI TTS model.                 |
 | `TTS_VOICE`       | `coral`            | `alloy`, `ash`, `nova`, `shimmer`, …  |
+| `TTS_SPEED`       | `1.4`              | Playback rate, `0.25`–`4.0`.          |
 | `TTS_HOST`        | `127.0.0.1`        | Loopback by default.                  |
 | `TTS_PORT`        | `47284`            |                                       |
 
