@@ -1,36 +1,34 @@
-"""High-level TTS service: orchestrates the activation cue, streamed TTS
-fetch, and playback — with cooperative cancellation so a second hotkey
+"""High-level TTS service: orchestrates the activation cue, TTS synthesis,
+and Windows-side playback — with cooperative cancellation so a second hotkey
 press cleanly stops in-flight speech.
 
-Design notes
-------------
-* The OpenAI streaming request and the activation cue run **concurrently**
-  inside ``speak()``. While the cue plays (~280 ms), the first PCM chunks
-  buffer into a ``Queue``, so by the time the cue ends, speech can start
-  with zero extra wait.
-* A single ``threading.Lock`` guards transitions of the active worker /
-  player so ``trigger()`` and ``cancel()`` can be called from any thread
-  (e.g. the HTTP daemon's request handlers).
+Why Windows-side playback?
+--------------------------
+WSLg's PulseAudio bridge does not reliably reach the Windows output device
+on this setup (PulseAudio reports RUNNING but nothing is audible), whereas
+native Windows playback works. So speech is synthesized in WSL as a complete
+WAV and handed to :mod:`windows_audio`, which plays it through PowerShell's
+``System.Media.SoundPlayer``.
+
+Latency note: SoundPlayer needs a full WAV, so we wait for synthesis to
+complete before playback starts. The activation cue (played immediately on
+the Windows side) masks that ~1-2 s synthesis window.
 """
 
 from __future__ import annotations
 
 import logging
-import queue
-import sys
 import threading
 from typing import Optional
 
-log = logging.getLogger("tts_cmd.service")
-
-from .audio import PcmStreamPlayer, play_wav
 from .config import ACTIVATION_SOUND_PATH, Settings, load_settings
 from .sound_effects import generate_activation_sound
 from .tts_client import OpenAITTSClient
+from .windows_audio import WindowsAudioBackend
 
+log = logging.getLogger("tts_cmd.service")
 
 MAX_TEXT_LENGTH = 4_000  # OpenAI TTS hard limit is 4096 chars.
-_SENTINEL = object()
 
 
 def _ensure_activation_sound() -> None:
@@ -50,11 +48,11 @@ class TTSService:
         self._settings = settings or load_settings()
         self._client = OpenAITTSClient(self._settings)
         _ensure_activation_sound()
+        self._audio = WindowsAudioBackend(ACTIVATION_SOUND_PATH)
 
         self._lock = threading.Lock()
         self._worker: Optional[threading.Thread] = None
         self._cancel_event = threading.Event()
-        self._current_player: Optional[PcmStreamPlayer] = None
 
     # ------------------------------------------------------------------ public
 
@@ -65,19 +63,15 @@ class TTSService:
     def cancel(self) -> bool:
         """Stop in-progress speech. Returns True if something was stopped."""
         with self._lock:
-            if self._worker is None or not self._worker.is_alive():
-                return False
-            self._cancel_event.set()
-            player = self._current_player
-        if player is not None:
-            player.terminate()
-        return True
+            active = self._worker is not None and self._worker.is_alive()
+            if active:
+                self._cancel_event.set()
+        if active:
+            self._audio.cancel()
+        return active
 
     def trigger(self, text: str) -> str:
-        """Hotkey semantics: if speaking, stop; else, speak ``text``.
-
-        Returns ``"stopped"`` or ``"started"`` for the caller's bookkeeping.
-        """
+        """Hotkey semantics: if speaking, stop; else, speak ``text``."""
         if self.cancel():
             return "stopped"
         cleaned = _clean(text)
@@ -102,61 +96,28 @@ class TTSService:
     def _spawn(self, text: str) -> None:
         with self._lock:
             self._cancel_event.clear()
-            self._current_player = None
-            self._worker = threading.Thread(
-                target=self._run, args=(text,), daemon=True
-            )
+            self._worker = threading.Thread(target=self._run, args=(text,), daemon=True)
             self._worker.start()
 
     def _run(self, text: str) -> None:
         log.debug("worker: start (%d chars)", len(text))
-        chunks: "queue.Queue[object]" = queue.Queue(maxsize=64)
 
-        fetcher = threading.Thread(
-            target=self._fetch, args=(text, chunks), daemon=True
-        )
-        fetcher.start()
+        # Cue plays immediately on the Windows side and masks synthesis latency.
+        self._audio.play_cue()
 
-        # Activation cue plays in parallel with the OpenAI request warming
-        # up — the first PCM chunks usually arrive while the cue is still
-        # finishing.
-        play_wav(ACTIVATION_SOUND_PATH)
+        try:
+            wav = self._client.synthesize_wav(text)
+        except Exception as exc:  # noqa: BLE001
+            log.exception("worker: synthesis failed: %s", exc)
+            return
+
         if self._cancel_event.is_set():
+            log.debug("worker: cancelled before playback")
             return
 
         try:
-            player = PcmStreamPlayer(sample_rate=self._settings.sample_rate)
+            self._audio.play_speech_wav(wav)
         except Exception as exc:  # noqa: BLE001
-            log.exception("worker: audio init failed: %s", exc)
-            return
-
-        with self._lock:
-            self._current_player = player
-        try:
-            with player:
-                while True:
-                    if self._cancel_event.is_set():
-                        break
-                    try:
-                        item = chunks.get(timeout=15.0)
-                    except queue.Empty:
-                        log.warning("worker: stream stalled (15s no chunk)")
-                        break
-                    if item is _SENTINEL:
-                        break
-                    player.write(item)  # type: ignore[arg-type]
+            log.exception("worker: playback failed: %s", exc)
         finally:
-            with self._lock:
-                self._current_player = None
             log.debug("worker: end")
-
-    def _fetch(self, text: str, chunks: "queue.Queue[object]") -> None:
-        try:
-            for chunk in self._client.stream(text):
-                if self._cancel_event.is_set():
-                    break
-                chunks.put(chunk)
-        except Exception as exc:  # noqa: BLE001
-            print(f"[tts-cmd] fetch error: {exc}", file=sys.stderr)
-        finally:
-            chunks.put(_SENTINEL)

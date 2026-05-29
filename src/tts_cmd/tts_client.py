@@ -20,6 +20,25 @@ class OpenAITTSClient:
         self._settings = settings
         self._client = OpenAI(api_key=settings.openai_api_key)
 
+    def synthesize_wav(self, text: str) -> bytes:
+        """Return a complete WAV file for ``text``.
+
+        Used by the Windows-playback backend, which needs a full WAV (with
+        header) for ``System.Media.SoundPlayer``. The activation cue masks
+        the synthesis latency on the client side.
+        """
+        request_kwargs = {
+            "model": self._settings.model,
+            "voice": self._settings.voice,
+            "input": text,
+            "response_format": "wav",
+        }
+        if self._settings.model.startswith("gpt-4o"):
+            request_kwargs["instructions"] = self._settings.instructions
+
+        response = self._client.audio.speech.create(**request_kwargs)
+        return response.content
+
     def stream(self, text: str) -> Iterator[bytes]:
         """Yield raw PCM chunks for the given text.
 

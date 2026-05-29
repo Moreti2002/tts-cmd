@@ -58,6 +58,7 @@ class _Handler(BaseHTTPRequestHandler):
     def do_POST(self) -> None:  # noqa: N802
         if self.path == "/trigger":
             text = self._read_body()
+            log.debug("POST /trigger (%d chars)", len(text))
             action = self.service.trigger(text)
             self._send_json({"action": action})
         elif self.path == "/cancel":

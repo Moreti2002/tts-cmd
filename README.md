@@ -1,41 +1,49 @@
 # tts-cmd
 
-Hotkey-driven, low-latency text-to-speech for WSL. Press
-`Ctrl+Shift+Space` anywhere on Windows (Chrome, Claude Code terminal, any
-app) and the selected text is read aloud by OpenAI's `gpt-4o-mini-tts`
-model. Press the same hotkey again while it is speaking to stop it.
+Hotkey-driven text-to-speech for WSL. Press `Ctrl+Shift+Space` anywhere on
+Windows (Chrome, Claude Code terminal, any app) and the selected text is read
+aloud by OpenAI's `gpt-4o-mini-tts` model. Press the same hotkey again while
+it is speaking to stop it.
 
 A long-running HTTP daemon in WSL holds the OpenAI client warm; the hotkey
-fires a 7 ms `curl` POST, so the only meaningful wait is the API's
-first-byte time.
+fires a sub-100 ms `curl` POST. Audio is played back on the Windows side via
+`System.Media.SoundPlayer`, which is reliable regardless of the WSLg audio
+bridge state.
 
 ## Architecture
 
 ```
-  Windows                                WSL
-  -------                                ---
-  AHK hotkey  --(curl POST localhost)-->  HTTP daemon  --(PCM stream)-->  ffplay
-       \                                       |
-        copies selection to                    +--> activation cue (paplay)
-        a UTF-8 temp file                      |
-                                               +--> OpenAI gpt-4o-mini-tts
+  Windows                                  WSL
+  -------                                  ---
+  AHK hotkey  --(curl POST localhost)-->   HTTP daemon
+       |                                        |
+       | copies selection to                    +--> OpenAI gpt-4o-mini-tts (WAV)
+       | a UTF-8 temp file                       |
+       |                                         v
+       |                                   writes WAV to %TEMP%
+       |                                         |
+       v                                         v
+  SoundPlayer  <--(powershell.exe play)----  daemon invokes powershell.exe
 ```
 
 * The daemon (`tts_cmd --serve`) listens on `127.0.0.1:47284`.
 * `POST /trigger` with the selection as the body. If already speaking, the
-  call cancels current playback (toggle semantics). Otherwise it kicks off a
-  worker that plays the activation cue and streams the TTS PCM straight into
-  `ffplay` via a pipe.
+  call cancels current playback (toggle semantics). Otherwise it plays the
+  activation cue, synthesizes the text to a WAV, writes it to the Windows
+  `%TEMP%`, and plays it via `powershell.exe` + `System.Media.SoundPlayer`.
+* Playback runs on Windows because WSLg's PulseAudio bridge does not reliably
+  reach the Windows output device on all setups (PulseAudio reports `RUNNING`
+  but nothing is audible). Routing through Windows avoids that entirely.
+* Cancellation: the player PowerShell records its own PID; a second hotkey
+  press triggers `taskkill.exe /F /PID` to stop it.
 * A `systemd --user` unit (`tts-cmd.service`) keeps the daemon up across
   WSL restarts.
-* The AHK script (Windows side) only knows how to copy the selection and
-  POST it.
 
 ## Requirements
 
-* WSL 2 with WSLg (provides PulseAudio at `unix:/mnt/wslg/PulseServer`).
-* Linux: `python3`, `ffmpeg` (for `ffplay`), `curl`. `paplay` optional but
-  recommended.
+* WSL 2 with Windows interop enabled (`powershell.exe` reachable from WSL).
+* Linux: `python3`, `curl`. `ffmpeg` optional (only used to regenerate the
+  activation cue from scratch — a prebuilt WAV ships in `assets/`).
 * `systemd --user` with linger enabled (`loginctl enable-linger $USER`).
 * Windows: AutoHotkey v2.
 * An `OPENAI_API_KEY` available in `~/linux-config/.env` (or the daemon's
@@ -99,8 +107,9 @@ tts-cmd/
 │   ├── __main__.py          CLI (--serve, --generate-sound, text args)
 │   ├── daemon.py            HTTP server (port 47284)
 │   ├── service.py           cancel-aware TTS orchestrator
-│   ├── tts_client.py        OpenAI streaming client
-│   ├── audio.py             ffplay pipe + WAV playback
+│   ├── tts_client.py        OpenAI client (WAV + streaming)
+│   ├── windows_audio.py     Windows-side playback (SoundPlayer)
+│   ├── audio.py             WSL ffplay/paplay fallback
 │   ├── sound_effects.py     activation cue generator
 │   └── config.py            settings + .env loader
 ├── systemd/tts-cmd.service  user unit
@@ -122,8 +131,8 @@ curl -s http://127.0.0.1:47284/health
 
 | Symptom                                  | Fix                                                                 |
 |------------------------------------------|---------------------------------------------------------------------|
-| No sound at all                          | `pactl info` must report `unix:/mnt/wslg/PulseServer`. Update WSL.  |
-| `ffplay: command not found`              | `sudo apt install ffmpeg`                                           |
+| No sound at all                          | Check Windows volume/mixer. Playback uses `powershell.exe` SoundPlayer. |
+| `powershell.exe: not found` on daemon    | Ensure the unit's PATH includes the Windows system dirs (see unit). |
 | `OPENAI_API_KEY not set`                 | Add it to `~/linux-config/.env`.                                    |
 | Hotkey does nothing                      | Check the AHK process is running and `curl /health` answers `ok`.   |
 | Daemon crashes on start                  | `journalctl --user -u tts-cmd.service -n 50`.                       |
