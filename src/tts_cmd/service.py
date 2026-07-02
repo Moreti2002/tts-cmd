@@ -19,12 +19,14 @@ from __future__ import annotations
 
 import logging
 import threading
+import platform
 from typing import Optional
 
 from .config import ACTIVATION_SOUND_PATH, Settings, load_settings
 from .sound_effects import generate_activation_sound
 from .tts_client import OpenAITTSClient
 from .windows_audio import WindowsAudioBackend
+from .linux_audio import LinuxAudioBackend
 
 log = logging.getLogger("tts_cmd.service")
 
@@ -48,7 +50,11 @@ class TTSService:
         self._settings = settings or load_settings()
         self._client = OpenAITTSClient(self._settings)
         _ensure_activation_sound()
-        self._audio = WindowsAudioBackend(ACTIVATION_SOUND_PATH)
+
+        if "microsoft" in platform.uname().release.lower():
+            self._audio = WindowsAudioBackend(ACTIVATION_SOUND_PATH)
+        else:
+            self._audio = LinuxAudioBackend(ACTIVATION_SOUND_PATH)
 
         self._lock = threading.Lock()
         self._worker: Optional[threading.Thread] = None

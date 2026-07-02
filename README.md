@@ -1,14 +1,14 @@
 # tts-cmd
 
-Hotkey-driven text-to-speech for WSL. Press `Ctrl+Shift+Space` anywhere on
-Windows (Chrome, Claude Code terminal, any app) and the selected text is read
+Hotkey-driven text-to-speech for WSL and Native Linux. Press `Ctrl+Shift+Space` anywhere on
+Windows or Linux (Chrome, Claude Code terminal, any app) and the selected text is read
 aloud by OpenAI's `gpt-4o-mini-tts` model. Press the same hotkey again while
 it is speaking to stop it.
 
-A long-running HTTP daemon in WSL holds the OpenAI client warm; the hotkey
-fires a sub-100 ms `curl` POST. Audio is played back on the Windows side via
+A long-running HTTP daemon holds the OpenAI client warm; the hotkey
+fires a sub-100 ms `curl` POST. When running in WSL, audio is played back on the Windows side via
 `System.Media.SoundPlayer`, which is reliable regardless of the WSLg audio
-bridge state.
+bridge state. On Native Linux, it plays directly using `paplay`, `ffplay` or `aplay`.
 
 ## Architecture
 
@@ -72,6 +72,14 @@ To auto-start on login, drop a shortcut into `shell:startup` (Win+R then
 `shell:startup`). The repo path under WSL is visible from Windows as
 `\\wsl$\Ubuntu\home\<user>\...\tts-cmd\windows\tts_hotkey.ahk`.
 
+### Linux hotkey (Ubuntu / GNOME)
+
+Map a custom keyboard shortcut (e.g. `Ctrl+Shift+Space`) to execute the provided script:
+```bash
+/path/to/tts-cmd/linux/tts_hotkey.sh
+```
+Requires `wl-clipboard` (Wayland) or `xclip`/`xsel` (X11) installed to read text selection.
+
 ## Usage
 
 | Action                          | Hotkey / command                            |
@@ -110,11 +118,13 @@ tts-cmd/
 │   ├── service.py           cancel-aware TTS orchestrator
 │   ├── tts_client.py        OpenAI client (WAV + streaming)
 │   ├── windows_audio.py     Windows-side playback (SoundPlayer)
+│   ├── linux_audio.py       Native Linux playback (paplay/ffplay/aplay)
 │   ├── audio.py             WSL ffplay/paplay fallback
 │   ├── sound_effects.py     activation cue generator
 │   └── config.py            settings + .env loader
 ├── systemd/tts-cmd.service  user unit
-├── windows/tts_hotkey.ahk   AutoHotkey v2 hotkey
+├── windows/tts_hotkey.ahk   AutoHotkey v2 hotkey for Windows
+├── linux/tts_hotkey.sh      Bash trigger script for Ubuntu/GNOME
 ├── install.sh               one-shot setup
 └── requirements.txt
 ```
@@ -132,10 +142,10 @@ curl -s http://127.0.0.1:47284/health
 
 | Symptom                                  | Fix                                                                 |
 |------------------------------------------|---------------------------------------------------------------------|
-| No sound at all                          | Check Windows volume/mixer. Playback uses `powershell.exe` SoundPlayer. |
-| `powershell.exe: not found` on daemon    | Ensure the unit's PATH includes the Windows system dirs (see unit). |
+| No sound at all                          | **Windows**: Check Windows volume/mixer. Playback uses `powershell.exe` SoundPlayer.<br>**Linux**: Ensure `pulseaudio-utils` (paplay) or `ffmpeg` (ffplay) is installed. |
+| `powershell.exe: not found` on daemon    | **WSL only**: Ensure the unit's PATH includes the Windows system dirs (see unit). |
 | `OPENAI_API_KEY not set`                 | Add it to `~/linux-config/.env`.                                    |
-| Hotkey does nothing                      | Check the AHK process is running and `curl /health` answers `ok`.   |
+| Hotkey does nothing                      | Check the AHK process is running (Windows) or the GNOME shortcut (Linux), and `curl 127.0.0.1:47284/health` answers `ok`.   |
 | Daemon crashes on start                  | `journalctl --user -u tts-cmd.service -n 50`.                       |
 
 ## License

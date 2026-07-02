@@ -63,8 +63,10 @@ cat <<EOF
 Next steps:
   1. Smoke test:
        ${PROJECT_ROOT}/scripts/tts_speak "olá, sistema pronto"
-  2. On Windows: open AutoHotkey v2 and run
-       \\\\wsl\$\\Ubuntu${PROJECT_ROOT}/windows/tts_hotkey.ahk
-     (Drop a shortcut in shell:startup to auto-launch on login.)
-  3. Press Ctrl+Shift+Space anywhere — press again to stop.
+  2. Windows Hotkey:
+       Run \\\\wsl\$\\Ubuntu${PROJECT_ROOT}/windows/tts_hotkey.ahk with AutoHotkey v2.
+       (Drop a shortcut in shell:startup to auto-launch on login.)
+  3. Linux Hotkey (Ubuntu/GNOME):
+       Map a custom shortcut (like Ctrl+Shift+Space) in your DE settings
+       to execute: ${PROJECT_ROOT}/linux/tts_hotkey.sh
 EOF
