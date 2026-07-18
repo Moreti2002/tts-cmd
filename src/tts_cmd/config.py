@@ -51,7 +51,10 @@ class Settings:
     speed: float = 1.4  # OpenAI only; Gemini paces via ``instructions``.
     instructions: str = (
         "Speak in a clear, natural, and engaging tone at a brisk pace. "
-        "Mirror the language of the input text."
+        "Mirror the language of the input text. "
+        "The word 'Claude' is the name of the Claude AI assistant: pronounce "
+        "it as a name ('clohd', rhyming with 'flawed'), never as the English "
+        "word 'cloud', and never translate it as computing cloud."
     )
     daemon_host: str = "127.0.0.1"
     daemon_port: int = 47284
