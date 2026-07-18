@@ -26,7 +26,7 @@ def _read_text(args: argparse.Namespace) -> str:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(prog="tts_cmd", description="OpenAI TTS for WSL hotkeys")
+    parser = argparse.ArgumentParser(prog="tts_cmd", description="Hotkey-driven TTS daemon/CLI")
     parser.add_argument("text", nargs="*", help="Text to speak (use '-' for stdin)")
     parser.add_argument("--serve", action="store_true", help="Run the HTTP daemon")
     parser.add_argument(

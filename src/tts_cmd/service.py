@@ -24,13 +24,13 @@ from typing import Optional
 
 from .config import ACTIVATION_SOUND_PATH, Settings, load_settings
 from .sound_effects import generate_activation_sound
-from .tts_client import OpenAITTSClient
+from .tts_client import create_client
 from .windows_audio import WindowsAudioBackend
 from .linux_audio import LinuxAudioBackend
 
 log = logging.getLogger("tts_cmd.service")
 
-MAX_TEXT_LENGTH = 4_000  # OpenAI TTS hard limit is 4096 chars.
+MAX_TEXT_LENGTH = 4_000  # Safety cap (OpenAI's hard limit is 4096 chars).
 
 
 def _ensure_activation_sound() -> None:
@@ -48,7 +48,7 @@ def _clean(text: str) -> str:
 class TTSService:
     def __init__(self, settings: Optional[Settings] = None) -> None:
         self._settings = settings or load_settings()
-        self._client = OpenAITTSClient(self._settings)
+        self._client = create_client(self._settings)
         _ensure_activation_sound()
 
         if "microsoft" in platform.uname().release.lower():

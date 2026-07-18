@@ -2,10 +2,10 @@
 
 Hotkey-driven text-to-speech for WSL and Native Linux. Press `Ctrl+Shift+Space` anywhere on
 Windows or Linux (Chrome, Claude Code terminal, any app) and the selected text is read
-aloud by OpenAI's `gpt-4o-mini-tts` model. Press the same hotkey again while
-it is speaking to stop it.
+aloud by a cloud TTS model (Gemini by default, OpenAI selectable via
+`TTS_PROVIDER`). Press the same hotkey again while it is speaking to stop it.
 
-A long-running HTTP daemon holds the OpenAI client warm; the hotkey
+A long-running HTTP daemon holds the TTS client warm; the hotkey
 fires a sub-100 ms `curl` POST. When running in WSL, audio is played back on the Windows side via
 `System.Media.SoundPlayer`, which is reliable regardless of the WSLg audio
 bridge state. On Native Linux, it plays directly using `paplay`, `ffplay` or `aplay`.
@@ -17,7 +17,7 @@ bridge state. On Native Linux, it plays directly using `paplay`, `ffplay` or `ap
   -------                                  ---
   AHK hotkey  --(curl POST localhost)-->   HTTP daemon
        |                                        |
-       | copies selection to                    +--> OpenAI gpt-4o-mini-tts (WAV)
+       | copies selection to                    +--> TTS provider (Gemini/OpenAI, WAV)
        | a UTF-8 temp file                       |
        |                                         v
        |                                   writes WAV to %TEMP%
@@ -46,8 +46,9 @@ bridge state. On Native Linux, it plays directly using `paplay`, `ffplay` or `ap
   activation cue from scratch — a prebuilt WAV ships in `assets/`).
 * `systemd --user` with linger enabled (`loginctl enable-linger $USER`).
 * Windows: AutoHotkey v2.
-* An `OPENAI_API_KEY` available in `~/linux-config/.env` (or the daemon's
-  environment).
+* An API key for the chosen provider (`GEMINI_API_KEY` or `OPENAI_API_KEY`)
+  available in `~/linux-config/.api-keys`, `~/linux-config/.env` or the
+  daemon's environment.
 
 ## Install
 
@@ -94,17 +95,19 @@ Requires `wl-clipboard` (Wayland) or `xclip`/`xsel` (X11) installed to read text
 
 ## Configuration
 
-Read from `~/linux-config/.env` (or any environment source the daemon
-inherits — `systemd-run --user --setenv` works too).
+Read from `~/linux-config/.api-keys`, `~/linux-config/.env` or any
+environment source the daemon inherits.
 
-| Variable          | Default            | Notes                                 |
-|-------------------|--------------------|---------------------------------------|
-| `OPENAI_API_KEY`  | (required)         |                                       |
-| `TTS_MODEL`       | `gpt-4o-mini-tts`  | Any OpenAI TTS model.                 |
-| `TTS_VOICE`       | `coral`            | `alloy`, `ash`, `nova`, `shimmer`, …  |
-| `TTS_SPEED`       | `1.4`              | Playback rate, `0.25`–`4.0`.          |
-| `TTS_HOST`        | `127.0.0.1`        | Loopback by default.                  |
-| `TTS_PORT`        | `47284`            |                                       |
+| Variable          | Default             | Notes                                            |
+|-------------------|---------------------|--------------------------------------------------|
+| `TTS_PROVIDER`    | `gemini`            | `gemini` or `openai`.                            |
+| `GEMINI_API_KEY`  | (required if gemini)|                                                  |
+| `OPENAI_API_KEY`  | (required if openai)|                                                  |
+| `TTS_MODEL`       | per provider        | `gemini-3.1-flash-tts-preview` / `gpt-4o-mini-tts`. |
+| `TTS_VOICE`       | per provider        | Gemini: `Kore`, `Puck`, `Zephyr`, … OpenAI: `coral`, `alloy`, … |
+| `TTS_SPEED`       | `1.4`               | OpenAI only; Gemini paces via prompt instructions. |
+| `TTS_HOST`        | `127.0.0.1`         | Loopback by default.                             |
+| `TTS_PORT`        | `47284`             |                                                  |
 
 ## Layout
 
@@ -116,7 +119,9 @@ tts-cmd/
 │   ├── __main__.py          CLI (--serve, --generate-sound, text args)
 │   ├── daemon.py            HTTP server (port 47284)
 │   ├── service.py           cancel-aware TTS orchestrator
-│   ├── tts_client.py        OpenAI client (WAV + streaming)
+│   ├── tts_client.py        provider-agnostic interface + factory
+│   ├── gemini_tts.py        Gemini client (PCM -> WAV)
+│   ├── openai_tts.py        OpenAI client (WAV + streaming)
 │   ├── windows_audio.py     Windows-side playback (SoundPlayer)
 │   ├── linux_audio.py       Native Linux playback (paplay/ffplay/aplay)
 │   ├── audio.py             WSL ffplay/paplay fallback
@@ -144,7 +149,7 @@ curl -s http://127.0.0.1:47284/health
 |------------------------------------------|---------------------------------------------------------------------|
 | No sound at all                          | **Windows**: Check Windows volume/mixer. Playback uses `powershell.exe` SoundPlayer.<br>**Linux**: Ensure `pulseaudio-utils` (paplay) or `ffmpeg` (ffplay) is installed. |
 | `powershell.exe: not found` on daemon    | **WSL only**: Ensure the unit's PATH includes the Windows system dirs (see unit). |
-| `OPENAI_API_KEY not set`                 | Add it to `~/linux-config/.env`.                                    |
+| `GEMINI_API_KEY not set`                 | Add it to `~/linux-config/.api-keys` (or `.env`).                   |
 | Hotkey does nothing                      | Check the AHK process is running (Windows) or the GNOME shortcut (Linux), and `curl 127.0.0.1:47284/health` answers `ok`.   |
 | Daemon crashes on start                  | `journalctl --user -u tts-cmd.service -n 50`.                       |
 

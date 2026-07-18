@@ -13,20 +13,41 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 ASSETS_DIR = PROJECT_ROOT / "assets"
 ACTIVATION_SOUND_PATH = ASSETS_DIR / "activation.wav"
 
+# ``.api-keys`` is where ~/linux-config keeps secrets (export KEY=... lines,
+# which python-dotenv parses fine); the ``.env`` paths remain as overrides.
 _ENV_PATHS = [
+    Path.home() / "linux-config" / ".api-keys",
     Path.home() / "linux-config" / ".env",
     PROJECT_ROOT / ".env",
 ]
 
+# Per-provider defaults. Select with TTS_PROVIDER; model/voice defaults only
+# apply when TTS_MODEL / TTS_VOICE are not set.
+_PROVIDERS = {
+    "gemini": {
+        "key_env": "GEMINI_API_KEY",
+        "model": "gemini-3.1-flash-tts-preview",
+        "voice": "Kore",
+    },
+    "openai": {
+        "key_env": "OPENAI_API_KEY",
+        "model": "gpt-4o-mini-tts",
+        "voice": "coral",
+    },
+}
+
+DEFAULT_PROVIDER = "gemini"
+
 
 @dataclass(frozen=True)
 class Settings:
-    openai_api_key: str
-    model: str = "gpt-4o-mini-tts"
-    voice: str = "coral"
+    provider: str
+    api_key: str
+    model: str
+    voice: str
     response_format: str = "pcm"
     sample_rate: int = 24_000
-    speed: float = 1.4
+    speed: float = 1.4  # OpenAI only; Gemini paces via ``instructions``.
     instructions: str = (
         "Speak in a clear, natural, and engaging tone at a brisk pace. "
         "Mirror the language of the input text."
@@ -43,17 +64,26 @@ def _load_env() -> None:
 
 def load_settings() -> Settings:
     _load_env()
-    api_key = os.environ.get("OPENAI_API_KEY")
+
+    provider = os.environ.get("TTS_PROVIDER", DEFAULT_PROVIDER).lower()
+    if provider not in _PROVIDERS:
+        raise RuntimeError(
+            f"Unknown TTS_PROVIDER {provider!r}; expected one of {sorted(_PROVIDERS)}."
+        )
+
+    defaults = _PROVIDERS[provider]
+    api_key = os.environ.get(defaults["key_env"])
     if not api_key:
         raise RuntimeError(
-            "OPENAI_API_KEY not set. Expected in "
+            f"{defaults['key_env']} not set. Expected in "
             f"{_ENV_PATHS[0]} or environment."
         )
 
     return Settings(
-        openai_api_key=api_key,
-        model=os.environ.get("TTS_MODEL", "gpt-4o-mini-tts"),
-        voice=os.environ.get("TTS_VOICE", "coral"),
+        provider=provider,
+        api_key=api_key,
+        model=os.environ.get("TTS_MODEL", defaults["model"]),
+        voice=os.environ.get("TTS_VOICE", defaults["voice"]),
         speed=float(os.environ.get("TTS_SPEED", "1.4")),
         daemon_host=os.environ.get("TTS_HOST", "127.0.0.1"),
         daemon_port=int(os.environ.get("TTS_PORT", "47284")),
