@@ -1,16 +1,17 @@
 [Unit]
-Description=tts-cmd HTTP daemon (OpenAI gpt-4o-mini-tts)
+Description=tts-cmd HTTP daemon (hotkey text-to-speech)
 After=sound.target network.target
 
 [Service]
 Type=simple
-WorkingDirectory=/home/darkdogg762/documents/codes/tts-cmd
-Environment=PYTHONPATH=/home/darkdogg762/documents/codes/tts-cmd/src
+WorkingDirectory=@PROJECT_ROOT@
+Environment=PYTHONPATH=@PROJECT_ROOT@/src
 Environment=XDG_RUNTIME_DIR=/run/user/1000
 # Windows interop: audio plays through powershell.exe/taskkill.exe, so the
 # Windows system directories must be on PATH for the WSL binfmt handler.
+# Harmless on native Linux (the /mnt/c paths simply don't exist).
 Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/lib/wsl/lib:/mnt/c/WINDOWS/system32:/mnt/c/WINDOWS:/mnt/c/WINDOWS/System32/Wbem:/mnt/c/WINDOWS/System32/WindowsPowerShell/v1.0
-ExecStart=/home/darkdogg762/documents/codes/tts-cmd/venv/bin/python -u -m tts_cmd --serve
+ExecStart=@PROJECT_ROOT@/venv/bin/python -u -m tts_cmd --serve
 Restart=on-failure
 RestartSec=3
 

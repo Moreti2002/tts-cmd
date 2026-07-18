@@ -33,11 +33,12 @@ log "preparing virtualenv at ${VENV_DIR}..."
 log "generating activation sound..."
 PYTHONPATH="${PROJECT_ROOT}/src" "${VENV_DIR}/bin/python" -m tts_cmd --generate-sound
 
-log "verifying OPENAI_API_KEY..."
-if grep -q '^OPENAI_API_KEY=' "${HOME}/linux-config/.env" 2>/dev/null; then
-    log "  found in ~/linux-config/.env"
+log "verifying API keys..."
+if grep -qE '^(export )?(GEMINI_API_KEY|OPENAI_API_KEY)=.+' \
+        "${HOME}/linux-config/.api-keys" "${HOME}/linux-config/.env" 2>/dev/null; then
+    log "  found a TTS API key in ~/linux-config"
 else
-    warn "OPENAI_API_KEY not found in ~/linux-config/.env — set it before first run."
+    warn "no GEMINI_API_KEY/OPENAI_API_KEY in ~/linux-config/.api-keys — set one before first run."
 fi
 
 log "installing launcher alias..."
@@ -47,7 +48,10 @@ chmod +x "${PROJECT_ROOT}/scripts/tts_speak"
 
 log "installing systemd-user service..."
 mkdir -p "${SYSTEMD_USER_DIR}"
-cp "${PROJECT_ROOT}/systemd/tts-cmd.service" "${SYSTEMD_USER_DIR}/tts-cmd.service"
+# The unit template uses @PROJECT_ROOT@ so the same repo works across
+# machines with different home paths (native Linux vs WSL).
+sed "s|@PROJECT_ROOT@|${PROJECT_ROOT}|g" \
+    "${PROJECT_ROOT}/systemd/tts-cmd.service" > "${SYSTEMD_USER_DIR}/tts-cmd.service"
 systemctl --user daemon-reload
 systemctl --user enable --now tts-cmd.service
 sleep 0.5
