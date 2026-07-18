@@ -24,23 +24,31 @@ def _have(cmd: str) -> bool:
 class LinuxAudioBackend:
     """Plays WAV audio natively on Linux."""
 
-    def __init__(self, cue_wav: Path) -> None:
+    def __init__(self, cue_wav: Path, stop_cue_wav: Path) -> None:
         self._cue_wav = cue_wav
+        self._stop_cue_wav = stop_cue_wav
         self._lock = threading.Lock()
         self._speech_proc: Optional[subprocess.Popen] = None
         log.info("Linux audio backend ready")
 
     def play_cue(self) -> None:
         """Fire-and-forget playback of the short activation cue."""
-        if not self._cue_wav.is_file():
+        self._play_cue_file(self._cue_wav)
+
+    def play_stop_cue(self) -> None:
+        """Fire-and-forget playback of the deactivation cue."""
+        self._play_cue_file(self._stop_cue_wav)
+
+    def _play_cue_file(self, path: Path) -> None:
+        if not path.is_file():
             return
-            
+
         if _have("paplay"):
-            cmd = ["paplay", str(self._cue_wav)]
+            cmd = ["paplay", str(path)]
         elif _have("ffplay"):
-            cmd = ["ffplay", "-nodisp", "-autoexit", "-loglevel", "quiet", str(self._cue_wav)]
+            cmd = ["ffplay", "-nodisp", "-autoexit", "-loglevel", "quiet", str(path)]
         elif _have("aplay"):
-            cmd = ["aplay", "-q", str(self._cue_wav)]
+            cmd = ["aplay", "-q", str(path)]
         else:
             log.warning("No audio player found for cue playback (need paplay, ffplay, or aplay)")
             return

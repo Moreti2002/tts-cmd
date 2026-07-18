@@ -90,23 +90,26 @@ def _resolve_windows_temp() -> tuple[str, Path]:
 class WindowsAudioBackend:
     """Plays WAV audio through Windows, bypassing WSLg PulseAudio."""
 
-    def __init__(self, cue_wav_wsl: Path) -> None:
+    def __init__(self, cue_wav_wsl: Path, stop_cue_wav_wsl: Path) -> None:
         self._win_temp, self._wsl_temp = _resolve_windows_temp()
 
         # Stable filenames inside Windows temp.
         self._cue_win = f"{self._win_temp}\\tts_cmd_cue.wav"
         self._cue_wsl = self._wsl_temp / "tts_cmd_cue.wav"
+        self._stop_cue_win = f"{self._win_temp}\\tts_cmd_stop_cue.wav"
+        self._stop_cue_wsl = self._wsl_temp / "tts_cmd_stop_cue.wav"
         self._speech_win = f"{self._win_temp}\\tts_cmd_speech.wav"
         self._speech_wsl = self._wsl_temp / "tts_cmd_speech.wav"
         self._pid_win = f"{self._win_temp}\\tts_cmd_play.pid"
         self._pid_wsl = self._wsl_temp / "tts_cmd_play.pid"
 
-        # Copy the activation cue into Windows temp once.
-        try:
-            if cue_wav_wsl.is_file():
-                self._cue_wsl.write_bytes(cue_wav_wsl.read_bytes())
-        except Exception as exc:  # noqa: BLE001
-            log.warning("could not stage activation cue: %s", exc)
+        # Copy the cues into Windows temp once.
+        for src, dst in ((cue_wav_wsl, self._cue_wsl), (stop_cue_wav_wsl, self._stop_cue_wsl)):
+            try:
+                if src.is_file():
+                    dst.write_bytes(src.read_bytes())
+            except Exception as exc:  # noqa: BLE001
+                log.warning("could not stage cue %s: %s", src.name, exc)
 
         self._lock = threading.Lock()
         self._speech_proc: Optional[subprocess.Popen] = None
@@ -116,9 +119,16 @@ class WindowsAudioBackend:
 
     def play_cue(self) -> None:
         """Fire-and-forget playback of the short activation cue."""
-        if not self._cue_wsl.is_file():
+        self._play_cue_file(self._cue_wsl, self._cue_win)
+
+    def play_stop_cue(self) -> None:
+        """Fire-and-forget playback of the deactivation cue."""
+        self._play_cue_file(self._stop_cue_wsl, self._stop_cue_win)
+
+    def _play_cue_file(self, wsl_path: Path, win_path: str) -> None:
+        if not wsl_path.is_file():
             return
-        script = f"(New-Object Media.SoundPlayer '{self._cue_win}').PlaySync()"
+        script = f"(New-Object Media.SoundPlayer '{win_path}').PlaySync()"
         try:
             subprocess.Popen(
                 ["powershell.exe", "-NoProfile", "-Command", script],

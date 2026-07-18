@@ -13,10 +13,10 @@ import argparse
 import logging
 import sys
 
-from .config import ACTIVATION_SOUND_PATH
+from .config import ACTIVATION_SOUND_PATH, DEACTIVATION_SOUND_PATH
 from .daemon import serve
 from .service import TTSService
-from .sound_effects import generate_activation_sound
+from .sound_effects import generate_activation_sound, generate_deactivation_sound
 
 
 def _read_text(args: argparse.Namespace) -> str:
@@ -45,8 +45,11 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     if args.generate_sound:
-        path = generate_activation_sound(ACTIVATION_SOUND_PATH)
-        print(f"Wrote {path}")
+        for path in (
+            generate_activation_sound(ACTIVATION_SOUND_PATH),
+            generate_deactivation_sound(DEACTIVATION_SOUND_PATH),
+        ):
+            print(f"Wrote {path}")
         return 0
 
     if args.serve:

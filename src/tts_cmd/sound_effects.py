@@ -52,16 +52,7 @@ def _click(duration_s: float = 0.006) -> np.ndarray:
     return noise * np.linspace(1.0, 0.0, n, dtype=np.float32) * 0.6
 
 
-def build_activation_sound() -> np.ndarray:
-    """Tactile click + three-tone ascending arpeggio with overtones."""
-    parts = [
-        _click(),
-        _blip(660.0, 0.07, release_s=0.05),
-        _silence(0.018),
-        _blip(990.0, 0.07, release_s=0.05),
-        _silence(0.018),
-        _blip(1480.0, 0.13, release_s=0.10),
-    ]
+def _finalize(parts: list[np.ndarray]) -> np.ndarray:
     signal = np.concatenate(parts)
     # Master gain — clearly audible without clipping.
     signal *= 0.85
@@ -69,6 +60,30 @@ def build_activation_sound() -> np.ndarray:
     if peak > 0.99:
         signal *= 0.99 / peak
     return signal
+
+
+def build_activation_sound() -> np.ndarray:
+    """Tactile click + three-tone ascending arpeggio with overtones."""
+    return _finalize([
+        _click(),
+        _blip(660.0, 0.07, release_s=0.05),
+        _silence(0.018),
+        _blip(990.0, 0.07, release_s=0.05),
+        _silence(0.018),
+        _blip(1480.0, 0.13, release_s=0.10),
+    ])
+
+
+def build_deactivation_sound() -> np.ndarray:
+    """Descending mirror of the activation cue — reads as "system disarmed"."""
+    return _finalize([
+        _click(),
+        _blip(1480.0, 0.07, release_s=0.05),
+        _silence(0.018),
+        _blip(990.0, 0.07, release_s=0.05),
+        _silence(0.018),
+        _blip(660.0, 0.13, release_s=0.10),
+    ])
 
 
 def write_wav(path: Path, samples: np.ndarray, sample_rate: int = SAMPLE_RATE) -> None:
@@ -83,6 +98,10 @@ def write_wav(path: Path, samples: np.ndarray, sample_rate: int = SAMPLE_RATE) -
 
 
 def generate_activation_sound(target: Path) -> Path:
-    samples = build_activation_sound()
-    write_wav(target, samples)
+    write_wav(target, build_activation_sound())
+    return target
+
+
+def generate_deactivation_sound(target: Path) -> Path:
+    write_wav(target, build_deactivation_sound())
     return target

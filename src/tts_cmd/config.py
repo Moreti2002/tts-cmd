@@ -12,6 +12,7 @@ from dotenv import load_dotenv
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 ASSETS_DIR = PROJECT_ROOT / "assets"
 ACTIVATION_SOUND_PATH = ASSETS_DIR / "activation.wav"
+DEACTIVATION_SOUND_PATH = ASSETS_DIR / "deactivation.wav"
 
 # ``.api-keys`` is where ~/linux-config keeps secrets (export KEY=... lines,
 # which python-dotenv parses fine); the ``.env`` paths remain as overrides.

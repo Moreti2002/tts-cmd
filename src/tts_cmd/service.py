@@ -22,8 +22,13 @@ import threading
 import platform
 from typing import Optional
 
-from .config import ACTIVATION_SOUND_PATH, Settings, load_settings
-from .sound_effects import generate_activation_sound
+from .config import (
+    ACTIVATION_SOUND_PATH,
+    DEACTIVATION_SOUND_PATH,
+    Settings,
+    load_settings,
+)
+from .sound_effects import generate_activation_sound, generate_deactivation_sound
 from .tts_client import create_client
 from .windows_audio import WindowsAudioBackend
 from .linux_audio import LinuxAudioBackend
@@ -33,9 +38,11 @@ log = logging.getLogger("tts_cmd.service")
 MAX_TEXT_LENGTH = 4_000  # Safety cap (OpenAI's hard limit is 4096 chars).
 
 
-def _ensure_activation_sound() -> None:
+def _ensure_cue_sounds() -> None:
     if not ACTIVATION_SOUND_PATH.is_file():
         generate_activation_sound(ACTIVATION_SOUND_PATH)
+    if not DEACTIVATION_SOUND_PATH.is_file():
+        generate_deactivation_sound(DEACTIVATION_SOUND_PATH)
 
 
 def _clean(text: str) -> str:
@@ -49,12 +56,12 @@ class TTSService:
     def __init__(self, settings: Optional[Settings] = None) -> None:
         self._settings = settings or load_settings()
         self._client = create_client(self._settings)
-        _ensure_activation_sound()
+        _ensure_cue_sounds()
 
         if "microsoft" in platform.uname().release.lower():
-            self._audio = WindowsAudioBackend(ACTIVATION_SOUND_PATH)
+            self._audio = WindowsAudioBackend(ACTIVATION_SOUND_PATH, DEACTIVATION_SOUND_PATH)
         else:
-            self._audio = LinuxAudioBackend(ACTIVATION_SOUND_PATH)
+            self._audio = LinuxAudioBackend(ACTIVATION_SOUND_PATH, DEACTIVATION_SOUND_PATH)
 
         self._lock = threading.Lock()
         self._worker: Optional[threading.Thread] = None
@@ -74,6 +81,7 @@ class TTSService:
                 self._cancel_event.set()
         if active:
             self._audio.cancel()
+            self._audio.play_stop_cue()
         return active
 
     def trigger(self, text: str) -> str:
