@@ -11,6 +11,7 @@ description: >-
   Reach for it even if the user just says "make it beep", "play a sound",
   "add a hotkey", or "it works in my shell but not as a service" — those are
   exactly the cases where the non-obvious WSLg/interop gotchas below bite.
+  Só se aplica quando a sessão roda dentro do WSL; em Linux nativo, ignore.
 ---
 
 # WSL ↔ Windows desktop integration
